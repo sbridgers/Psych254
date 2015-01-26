@@ -4,6 +4,8 @@ author: "Mike Frank"
 date: "January 11, 2015"
 output: html_document
 ---
+**Sophie Bridgers**
+Note: I worked with Michael Henry on this Problem Set.
 
 This is problem set #1, in which we hope you will practice the packages tidyr and dplyr. There are some great cheat sheets from [RStudio](http://www.rstudio.com/resources/cheatsheets/).
 
@@ -22,6 +24,9 @@ I pretty much always clear the workspace and load the same basic helper function
 ```{r prelims}
 rm(list=ls())
 source("../helper/useful.R")
+library(tidyr)
+library(dplyr)
+setwd("~/psych254_materials/analyses")
 ```
 
 Note that I'm using a "relative" path (the "../helper") rather than an absolute path (e.g. "/Users/mcfrank/code/projects/etc..."). The relative path means that someone else can run your code by changing to the right directory, while the absolute path will force someone else to make trivial changes every time they want to run it.
@@ -41,6 +46,18 @@ HINT: try computing some summary statistics for the different items. Also, are t
 
 Fix the data file so that it looks reasonable.
 
+```{r explore data}
+
+summary(d) #A few workers completed the survey more than once
+str(d)
+
+mean.dogcost = mean(d$Answer.dog_cost) #Argument is a factor not a number, so you can't calculate summary statistics such as a mean!
+
+mean.plasmacost = mean(d$Answer.plasma_cost)
+var.dogcost = var(d$Answer.dog_cost)
+
+```
+
 
 
 Part 2: Making these data tidy
@@ -49,7 +66,9 @@ Part 2: Making these data tidy
 Now let's start with the cleaned data, so that we are all beginning from the same place.
 
 ```{r data2}
-d <- read.csv("../data/janiszewski_rep_cleaned.csv")
+
+d.clean <- read.csv("../data/janiszewski_rep_cleaned.csv")
+
 ```
 
 This data frame is in *wide* format - that means that each row is a participant and there are multiple observations per participant. This data is not *tidy*.
@@ -59,9 +78,10 @@ To make this data tidy, we'll do some cleanup. First, remove the columns you don
 HINT: `?select` and the examples of helper functions will help you be efficient.
 
 ```{r select}
-d.tidy <- select(...)
-```
 
+d.tidy <- select(d.clean, WorkerId, starts_with("Input"), starts_with("Answer"))
+
+```
 
 Try renaming some variables using `rename`. A good naming scheme is:
 
@@ -72,7 +92,19 @@ Try renaming some variables using `rename`. A good naming scheme is:
 Try using the `%>%` operator as well. So you will be "piping" `d %>% rename(...)`.
 
 ```{r rename}
-d.tidy <- ...
+
+#Below I re-define d.tidy using the `%>%` operator and renamed all of the variables so that they were consistent and comprehensible.
+d.tidy <- d.clean %>% 
+  select(., WorkerId, starts_with("Input"), starts_with("Answer")) %>% 
+  rename(., worker_id = WorkerId, 
+         condition = Input.condition, 
+         input_dog = Input.price1, 
+         input_plasma = Input.price2, 
+         input_sushi = Input.price3, 
+         ans_dog = Answer.dog_cost, 
+         ans_plasma = Answer.plasma_cost, 
+         ans_sushi = Answer.sushi_cost)
+
 ```
 
 
@@ -81,14 +113,23 @@ OK, now for the tricky part. Use the verb *gather* to turn this into a *tidy* da
 HINT: look for online examples!
 
 ```{r gather}
-d.tidy <- ...
+
+d.tidier <- d.tidy %>% gather(key, value, -worker_id, -condition) %>%
+  separate(key, c("a", "b"), by = "_") %>%
+  spread(a, value) %>%
+  rename(., type = b) %>%
+  select(., worker_id, condition, type, input, ans)
+
+
 ```
 
 
 Bonus problem: *spread* these data back into a wide format data frame.
 
 ```{r spread}
-d.wide <- ...
+#I did not have time to do this bounus problem, but I will look into it later.
+#d.wide <- ...
+
 ```
 
 
@@ -98,13 +139,37 @@ Part 3: Manipulating the data using dplyr
 Try also using the dplyr `distinct` function to remove the duplicate participants from the raw csv file that you discovered in part 1.
 
 ```{r}
+
 d.raw <- read.csv("../data/janiszewski_rep_exercise.csv")
-d.unique.subs <- ...
+
+#Distinct removes the data from workers who took the survey more than once.
+d.unique.subs <- distinct(d.raw, WorkerId)
+summary(d.unique.subs)
+
 ```
 
 As we said in class, a good thing to do is always to check histograms of the response variable. Do that now, using either regular base graphics or ggplot. What can you conclude? 
 
 ```{r}
+
+#I graphed the data two ways below for practice.
+ggplot(data = d.tidier, 
+       aes(x = ans, fill = type))+
+  geom_histogram()+
+  facet_wrap(~type, scales = 'free')
+
+qplot(data=d.tidier,x=ans,geom='histogram')
+
+sophies_mode<-function(data){
+  return(names(table(data))[max(table(data)) == table(data)])}
+
+mode <- d.tidier %>% 
+  group_by(type) %>%
+  summarise(mode = sophies_mode(ans))
+mode
+
+#Conclusions: The prices given for sushi are more or less normally distributed, with a mode and mean around $8. The distributions of prices given for dogs and plasma are left skewed, with a mode of $2000 for dogs and $4,500 for plasma.
+
 ```
 
 OK, now we turn to the actual data anlysis. We'll be using dplyr verbs to `filter`, `group`,`mutate`, and `summarise` the data.
@@ -112,36 +177,39 @@ OK, now we turn to the actual data anlysis. We'll be using dplyr verbs to `filte
 Start by using `summarise` on `d.tidy` to compute the mean bet across all participants. Note that this is simply taking the grand mean. Ultimately, we would like to compute the mean for different conditions and items, but this will come later. Right now we're just learning the syntax of `summarise`.
 
 ```{r}
-...
+
+mean_bet = summarise(d.tidier, avg = mean(ans, na.rm = T))
+mean_bet
+
 ```
 
 This is a great time to get comfortable with the `%>%` operator. In brief, `%>%` allows you to pipe data from one function to another. So if you would have written:
 
 ```{r}
-d <- function(d, other_stuff)
+#d <- function(d, other_stuff)
 ```
   
 you can now write:
 
 ```{r}
-d <- d %>% function(other_stufF)
+#d <- d %>% function(other_stufF)
 ```
 
 That doesn't seem like much, but it's cool when you can replace:
 
 ```{r}
-d <- function1(d, other_stuff)
-d <- function2(d, lots_of_other_stuff, more_stuff)
-d <- function3(d, yet_more_stuff)
+#d <- function1(d, other_stuff)
+#d <- function2(d, lots_of_other_stuff, more_stuff)
+#d <- function3(d, yet_more_stuff)
 ```
 
 with
 
 ```{r}
-d <- d %>% 
-  function1(other_stuff) %>%
-  function2(lots_of_other_stuff, more_stuff) %>%
-  function3(yet_more_stuff)
+#d <- d %>% 
+  #function1(other_stuff) %>%
+  #function2(lots_of_other_stuff, more_stuff) %>%
+  #function3(yet_more_stuff)
 ```
 
 In other words, you get to make a clean list of the things you want to do and chain them together without a lot of intermediate assignments. 
@@ -149,7 +217,11 @@ In other words, you get to make a clean list of the things you want to do and ch
 Let's use that capacity to combine `summarise` with `group_by`, which allows us to break up our summary into groups. Try grouping by item and condition and taking means using `summarise`, chaining these two verbs with `%>%`.
 
 ```{r}
-...
+
+d.tidier %>%
+  group_by(condition, type) %>%
+  summarise(avg = mean(ans, na.rm = T))
+
 ```
 
 OK, it's looking like there are maybe some differences between conditions, but how are we going to plot these? They are fundamentally different magnitudes from one another. 
@@ -159,7 +231,8 @@ Really we need the size of the deviation from the anchor, which means we need th
 Take a look at this complex expression. You don't have to modify it, but see what is being done here with gather, separate and spread. Run each part (e.g. the first verb, the first two verbs, etc.) and after doing each, look at `head(d.tidy)` to see what they do. 
 
 ```{r}
-d.tidy <- d %>%
+
+d.tidy <- d.clean %>%
   select(WorkerId, Input.condition, 
          starts_with("Answer"), 
          starts_with("Input")) %>%
@@ -176,6 +249,7 @@ d.tidy <- d %>%
          dog_cost, plasma_cost, sushi_cost) %>%
   separate(name, c("item", "type"), sep = "_") %>%
   spread(type, cost)
+
 ```
 
 Now we can do the same thing as before but look at the relative difference between anchor and estimate. Let's do this two ways: 
@@ -183,12 +257,16 @@ Now we can do the same thing as before but look at the relative difference betwe
 * By computing absolute value of percentage change in price, and 
 * By computing z-scores over items.
 
-To do the first, use the `mutate` verb to add a percent change column, then comute the same summary as before. 
+To do the first, use the `mutate` verb to add a percent change column, then compute the same summary as before. 
 
 ```{r}
+
 pcts <- d.tidy %>%
-  mutate(pct_change = ... ) %>%
-  ...
+  mutate(pct_change = abs((anchor - cost) / anchor) ) %>%
+  group_by(condition, item) %>%
+  summarise(avg_pct = mean(pct_change, na.rm = T))
+pcts
+
 ```
 
 To do the second, you will need to `group` first by item, compute z-scores with respect to items, then further group by condition.
@@ -198,13 +276,21 @@ HINT: `scale(x)` returns a complicated data structure that doesn't play nicely w
 HINT: by default, `group_by` undoes any previous groupings. If you want to add new grouping variables *on top* of pre-existing ones, specify `add = TRUE`, e.g., `d %>% group_by(var1) %>% group_by(var2, add = TRUE)`.
 
 ```{r}
-z.scores <- d.tidy %>% ...
+
+z.scores <- d.tidy %>%
+  group_by(item) %>%
+  mutate(z_scores = scale(cost)[,1]) %>%
+  group_by(condition, add = TRUE) %>%
+  summarize(avg_z = mean(z_scores, na.rm = T))
+z.scores
+  
 ```
 
 OK, now here comes the end: we're going to plot the differences and see if anything happened. First the percent change:
 
 ```{r}
-qplot(item, pct, fill=condition,
+
+qplot(item, avg_pct, fill=condition,
       position="dodge",
       stat="identity", geom="bar",
       data=pcts)
@@ -213,10 +299,12 @@ qplot(item, pct, fill=condition,
 and the z-scores:
 
 ```{r}
-qplot(item, z, fill=condition,
+
+qplot(item, avg_z, fill=condition,
       position="dodge",
       stat="identity", geom="bar",
       data=z.scores)
+
 ```
 
 Oh well. This replication didn't seem to work out straightforwardly.
