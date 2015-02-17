@@ -1,9 +1,11 @@
 ---
 title: 'Psych 254 W15 PS #2'
-author: "Mike Frank"
+author: "Sophie Bridgers"
 date: "February 4, 2015"
 output: html_document
 ---
+
+**Note: I worked with Cayce Hook and MH Tessler on this problem set.**
 
 This is problem set #2, in which we hope you will practice the visualization package ggplot2, as well as hone your knowledge of the packages tidyr and dplyr. 
 
@@ -21,6 +23,7 @@ First install and load the package.
 ```{r}
 #install.packages("ggplot2")
 library(ggplot2)
+setwd("~/Documents/STANFORD PHD/Psych 254 Winter 2014/ProblemSets/analyses")
 ```
 
 Now we're going to use qplot. qplot is the easy interface, meant to replace plot. You can give it simple `qplot(x,y)` examples, or slightly more complex examples like `qplot(x, y, col=grp, data=d)`. 
@@ -71,16 +74,35 @@ The basic unit of a ggplot plot is a "geom" - a mapping between data (via an "ae
 Let's try some other geoms and manipulate their parameters. First, try a histogram (`geom="hist"`). 
 
 ```{r}
+
+qplot(carat, fill = clarity, data = diamonds)
+
+#I tried setting geom to "hist", but it returned the following error: "No geom called hist", so I called qplot with only the x-variable defined.
+
 ```
 
 Now facet your histogram by clarity and cut. 
 
 ```{r}
+
+qplot(carat, fill = clarity, facets = clarity ~ cut, data = diamonds)
+
 ```
 
 I like a slightly cleaner look to my plots. Luckily, ggplot allows you to add "themes" to your plots. Try doing the same plot but adding `+ theme_bw()` or `+ theme_classic()`. Different themes work better for different applications, in my experience. 
 
 ```{r}
+
+#Below I try `theme_bw()` on the histogram of carats
+qplot(carat, fill = clarity, facets = clarity ~ cut, data = diamonds) + 
+  theme_bw()
+
+
+#Next I try `theme_classic()` on the histogram of carats
+qplot(carat, fill = clarity, facets = clarity ~ cut, data = diamonds) +
+  theme_classic()
+
+
 ```
 
 Part 1B: Exploring ggplot2 using ggplot
@@ -95,18 +117,29 @@ sometimes easier to use and sometimes a bit more complicated. What I want to sho
 d <- ggplot(diamonds, aes(x=carat, y=price)) # first you set the aesthetic and dataset
 d + geom_point() # then you add geoms
 d + geom_point(aes(colour = carat)) # and you can keep doing this to add layers to the plot
+
 ```
 
 Try writing this as a single set of additions (e.g. one line of R code, though you can put in linebreaks). This is the most common workflow for me. 
 
 
 ```{r}
+
+ggplot(diamonds, aes(x = carat, y = price)) +
+  geom_point(aes(colour = carat))
+
 ```
 
 
 You can also set the aesthetic separately for each geom, and make some great plots this way. Though this can get complicated. Try using `ggplot` to build a histogram of prices. 
 
 ```{r}
+
+ggplot(diamonds, aes(x=price)) + 
+  geom_histogram(aes(fill = clarity)) +
+  facet_grid(clarity ~ cut) +
+  theme_bw()
+
 ```
 
 Part 2: Diving into real data: Sklar et al. (2012)
@@ -130,32 +163,254 @@ Data Prep
 First read in two data files and subject info. A and B refer to different trial order counterbalances. 
 
 ```{r}
+
 subinfo <- read.csv("../data/sklar_expt6_subinfo_corrected.csv")
 d.a <- read.csv("../data/sklar_expt6a_corrected.csv")
 d.b <- read.csv("../data/sklar_expt6b_corrected.csv")
+
 ```
 
 Gather these datasets into long form and get rid of the Xs in the headers.
 
 ```{r}
+
+d.a.tidy = d.a %>%
+  gather(subid, RT, starts_with("X"))
+
+d.b.tidy = d.b %>%
+  gather(subid, RT, starts_with("X"))
+
+#I remove the Xs below
+
 ```
 
 Bind these together. Check out `bind_rows`.
 
 ```{r}
+
+d.ab.tidy = bind_rows(d.a.tidy, d.b.tidy) 
+
+#Below I remove the X's from the subid and re-code subid as a number
+d.ab.tidy = d.ab.tidy %>% 
+  mutate(subid = as.integer(gsub("X", "", subid)))
+
 ```
 
 Merge these with subject info. You will need to look into merge and its relatives, `left_join` and `right_join`. Call this dataframe `d`, by convention. 
 
 ```{r}
+
+#Merge data with subject info
+d.full = right_join(d.ab.tidy, subinfo, by = "subid")
+
+#I reorder the columns, so that all the subject info comes before the RT
+d = select(d.full, subid, prime, prime.result, target, congruent, operand, distance, counterbalance, presentation.time, subjective.test, objective.test, RT)
+
 ```
 
 Clean up the factor structure.
 
 ```{r}
+
 d$presentation.time <- factor(d$presentation.time)
 levels(d$operand) <- c("addition","subtraction")
+d$subid <- factor(d$subid)
+d$counterbalance <- factor(d$counterbalance)
+str(d)
+
 ```
 
-Data Analysis
--------------
+Data Analysis Preliminaries
+---------------------------
+
+Examine the basic properties of the dataset. First, take a histogram.
+
+```{r}
+
+ggplot(d, aes(x = RT)) + 
+  geom_histogram()
+
+```
+
+Challenge question: what is the sample rate of the input device they are using to gather RTs?
+
+```{r}
+
+#I did not have a chance to answer this challenge question.
+
+```
+
+Sklar et al. did two manipulation checks. Subjective - asking participants whether they saw the primes - and objective - asking them to report the parity of the primes (even or odd) to find out if they could actually read the primes when they tried. Examine both the unconscious and conscious manipulation checks (this information is stored in subinfo). What do you see? Are they related to one another?
+
+```{r}
+
+ggplot(subinfo, aes(x = objective.test)) + 
+  geom_histogram() + 
+  facet_grid(~subjective.test)
+
+qplot(subid, objective.test, color = subjective.test, facets = . ~ subjective.test, data = subinfo)
+
+#From these plots above, it appears that subjects who report seeing the prime, on average perform higher on the objective test.
+
+r = lm(objective.test ~ subjective.test, data = d)
+summary(r)
+
+#A linear regression testing whether performance on the subjective test predicts performance on the objective test reveals a significant relationship between these two manipulation checks: If subjects pass the subjective test, they are more likely to perform higher on the objective test (b =0.21, p < 0.001). In other words, as concluded from the plots above, subjects who report seeing the prime on average perform higher on the objective test than subjects who claim they did not see the prime.
+
+```
+
+OK, let's turn back to the measure and implement Sklar et al.'s exclusion criterion. You need to have said you couldn't see (subjective test) and also be not significantly above chance on the objective test (< .6 correct). Call your new data frame `ds`.
+
+```{r}
+
+ds = d %>%
+  filter(subjective.test == 0, objective.test < 0.6)
+
+#View(ds)
+
+#Below I am just checking that the filter did what I intended.
+summarise(ds, max = max(subjective.test))
+summarise(ds, max = max(objective.test))
+
+```
+
+Sklar et al.'s analysis
+-----------------------
+
+Sklar et al. show a plot of a "facilitation effect" - the time to respond to incongruent primes minus the time to respond to congruent primes. They then show plot this difference score for the subtraction condition and for the two presentation times they tested. Try to reproduce this analysis.
+
+HINT: first take averages within subjects, then compute your error bars across participants, using the `sem` function (defined above). 
+
+```{r}
+
+ds_summary = ds %>% 
+  group_by(subid, presentation.time, operand, congruent) %>%
+  summarise(avg = mean(RT, na.rm = T)) %>%
+  spread(congruent, avg) %>% 
+  mutate(diff = no - yes) %>%
+  group_by(operand, presentation.time) %>%
+  summarise(avg = mean(diff), err = sem(diff))
+
+ds_summary
+            
+```
+
+Now plot this summary, giving more or less the bar plot that Sklar et al. gave (though I would keep operation as a variable here. Make sure you get some error bars on there (e.g. `geom_errorbar` or `geom_linerange`). 
+
+```{r}
+
+library(ggplot2)
+sklar_plot = ggplot(data = ds_summary, aes(x = presentation.time, y = avg, fill = presentation.time)) 
+
+sklar_plot + 
+  geom_bar(stat = "identity") + facet_wrap(~operand) +  
+  geom_errorbar(width = .1, aes(ymin = avg - err, ymax = avg + err))
+
+```
+
+What do you see here? How close is it to what Sklar et al. report? Do the error bars match? How do you interpret these data? 
+
+Response: The average facilitation effects for the subtraction primes for each of the presentation times appear to match the averages reported and plotted in the Sklar et al. paper. However, my error bars do not match. It appears that  Sklar et al. plotted *half* of the standard error above and below the mean rather than plotting one full standard error above and below the mean. 
+
+Challenge problem: verify Sklar et al.'s claim about the relationship between RT and the objective manipulation check.
+
+```{r}
+
+qplot(objective.test, RT, data = ds)
+
+cor.test(ds$objective.test, ds$RT, use = pairwise.complete.obs)
+
+```
+
+From the plot, there does not appear to be a relationship between RT and the objective manipulation. The correlation coefficient between these variables is also low (r = 0.04), suggesting there is no relationship between participants' performance on the objective manipulation and their reaction times.
+
+Your own analysis
+-----------------
+
+Show us what you would do with these data, operating from first principles. What's the fairest plot showing a test of Sklar et al.'s original hypothesis that people can do arithmetic "non-consciously"?
+
+```{r}
+
+#First, I would look at the data without excluding any participants. I would also use confidence intervals rather than standard error bars.
+d_summary = d %>% 
+  group_by(subid, presentation.time, operand, congruent) %>%
+  summarise(avg = mean(RT, na.rm = T)) %>%
+  spread(congruent, avg) %>% 
+  mutate(diff = no - yes) %>%
+  group_by(operand, presentation.time) %>%
+  summarise(avg = mean(diff), err = sem(diff), c.95 = ci95(diff))
+
+ggplot(data = d_summary, aes(x = presentation.time, y = avg, fill = presentation.time)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~operand) +  
+  geom_errorbar(width=.1, aes(ymin=avg-c.95, ymax=avg+c.95)) +
+  theme_bw()
+
+#I am somewhat concerned with the authors' exclusion criteria because such a high number of subjects are excluded from the analysis. Below, I first only exclude subjects who passed the subjective test. Second, I only exclude subjects who scored higher than .6 on the objective test. I compare the plots of the data using these exclusion criteria.
+
+ds_st = d %>%
+  filter(subjective.test == 0)
+
+ds_st_summary = ds_st %>% 
+  group_by(subid, presentation.time, operand, congruent) %>%
+  summarise(avg = mean(RT, na.rm = T)) %>%
+  spread(congruent, avg) %>% 
+  mutate(diff = no - yes) %>%
+  group_by(operand, presentation.time) %>%
+  summarise(avg = mean(diff), err = sem(diff), c.95 = ci95(diff))
+
+ggplot(data = ds_st_summary, aes(x = presentation.time, y = avg, fill = presentation.time)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~operand) +  
+  geom_errorbar(width=.1, aes(ymin=avg-c.95, ymax=avg+c.95)) +
+  theme_bw()
+
+ds_ot = d %>%
+  filter(objective.test < 0.6)
+
+ds_ot_summary = ds_ot %>% 
+  group_by(subid, presentation.time, operand, congruent) %>%
+  summarise(avg = mean(RT, na.rm = T)) %>%
+  spread(congruent, avg) %>% 
+  mutate(diff = no - yes) %>%
+  group_by(operand, presentation.time) %>%
+  summarise(avg = mean(diff), err = sem(diff), c.95 = ci95(diff))
+
+ggplot(d = ds_ot_summary, aes(x = presentation.time, y = avg, fill = presentation.time)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~operand) +  
+  geom_errorbar(width=.1, aes(ymin=avg-c.95, ymax=avg+c.95))
+
+```
+
+Visualizing the data with different exclusion criteria, reveals that the results Sklar et al. found are largely driven by the specific exclusion criteria they use. If you use only one of the criteria they implement (i.e., only inluding subjects who fail the subjective test OR only including subjects who score less than 0.6 on the objective test), the facilitation effect disappears for the 2000ms presentation-time and decreases for the 1700ms presentation-time. Also, using confidence intervals instead of standar-error bars reveals that the effects Sklar et al. find are smaller than implied by the figure in the paper.
+
+```{r}
+
+#I also made this plot. It is not easy to read and did not turn out to be that informative. I made it because I was curious to see if there were any differences among subjects in ow they responded to incongruent vs. congruent primes.
+
+ggplot(ds, aes(x = RT, fill = congruent)) + 
+  geom_histogram(position = position_dodge()) + 
+  facet_wrap(operand ~ subid)
+
+```
+
+Challenge problem: Do you find any statistical support for Sklar et al.'s findings?
+
+```{r}
+
+#I used Sklar et al.'s exclusion criteria in the analysis below.
+library(lme4)
+
+r2 = ds %>% 
+  filter(operand == 'subtraction') %>%
+  lmer(RT ~ congruent + (1 + congruent|subid), .)
+
+summary(r2)
+
+```
+
+The study is a repeated measures design, so I fit the data with a linear mixed model with congruence as the predictor (fixed) variable and reaction time as the outcome variable. I also included a random intercept and slope for subject. The model reveals that the congruence of the prime does affect reaction time: participants who saw a congruent prime were significantly faster at responding than participants who saw an incongruent prime (b = -15.06, t = -2.663). The variance of subject (12458.74) is quite large compared to the residual variance (9463.11); thus the random effect of intercept for subjects is accounting for a substantial amount of the variance in our model. The variance of slope (13.42), however, is small compared to the residual variance, but this is likely because the correlation between the random effects of intercept and slope is quite high (r = -1.00). In sum, I do find statistical support for Sklar et al.'s findings.
+
+
+
