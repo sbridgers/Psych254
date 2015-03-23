@@ -1,0 +1,274 @@
+---
+title: 'Psych 254 W15 PS #3'
+author: "Sophie Bridgers"
+date: "March 22, 2015"
+output: html_document
+---
+
+**Note: I worked with Yuan Chang and MH on this problem set.**
+
+This is problem set #3, in which we want you to integrate your knowledge of data wrangling with some basic simulation skills and some linear modeling.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+setwd("~/Documents/STANFORD PHD/Psych 254 Winter 2014/ProblemSets/analyses")
+```
+
+Part 1: Basic simulation and NHST
+=================================
+
+Let's start by convincing ourselves that t-tests have the appropriate false positive rate. Run 10,000 t-tests with standard, normally-distributed data from a made up 30-person, single-measurement experiment (the command for sampling from a normal distribution is `rnorm`). What's the mean number of "significant" results?
+
+First do this using a `for` loop.
+
+```{r}
+
+p.values = NULL
+
+for (i in 1:10000) {
+  sim_samp = rnorm(30)
+  res = t.test(sim_samp)
+  p.values[i] = res$p.value ##adds new p.value from res to p.values
+  }
+
+average_sig = mean(p.values < 0.05); average_sig
+
+```
+
+Next, do this using the `replicate` function:
+
+```{r}
+
+p.vals <- function() {
+  sim_samp = rnorm(30)
+  res = t.test(sim_samp)
+  return(res$p.value) 
+  }
+
+p.rep = replicate(10000, p.vals())
+
+average_sig2 = mean(p.rep < 0.05); average_sig2
+
+```
+
+Ok, that was a bit boring. Let's try something moderately more interesting - let's implement a p-value sniffing simulation, in the style of Simons, Nelson, & Simonsohn (2011).
+
+Consider this scenario: you have done an experiment, again with 30 participants (one observation each, just for simplicity). The question is whether their performance is above chance. You aren't going to check the p-value every trial, but let's say you run 30 - then if the p-value is within the range p < .25 and p > .05, you optionally run 30 more and add those data, then test again. But if the original p value is < .05, you call it a day, and if the original is > .25, you also stop.  
+
+First, write a function that implements this sampling regime.
+
+```{r}
+
+double.sample <- function () {
+   sim_samp = rnorm(30)
+  p.interim = t.test(sim_samp)$p.value
+  if((0.05 < p.interim) & (p.interim < 0.25)) {
+      re_samp = rnorm(30)
+      sim_samp = c(sim_samp, re_samp)
+      p.final = t.test(sim_samp)$p.value
+    } else { p.final = p.interim
+      
+    }
+  return(p.final)
+}
+```
+
+Now call this function 10k times and find out what happens. 
+
+```{r}
+
+p.doub = data.frame(samps = replicate(10000, double.sample()))
+
+qplot(x=samps, data = p.doub, binwidth = 0.01)
+
+average_sig3 = mean(p.doub < 0.05); average_sig3
+
+```
+
+Is there an inflation of false positives? How bad is it?
+
+Yes, there is an inflation of the false positive rate.
+
+Now modify this code so that you can investigate this "double the sample" rule in a bit more depth. Let's see what happens when you double the sample ANY time p > .05 (not just when p < .25), or when you do it only if p < .5 or < .75. How do these choices affect the false positive rate?
+
+HINT: Try to do this by making the function `double.sample` take the upper p value as an argument, so that you can pass this through dplyr.
+
+HINT 2: You may need more samples. Find out by looking at how the results change from run to run.
+
+```{r}
+
+double.sample2 <- function (up) {
+   sim_samp = rnorm(30)
+  p.interim = t.test(sim_samp)$p.value
+  if((0.05 < p.interim) & (p.interim < up)) {
+      re_samp = rnorm(30)
+      sim_samp = c(sim_samp, re_samp)
+      p.final = t.test(sim_samp)$p.value
+    } else { p.final = p.interim
+      
+    }
+  return(p.final)
+}
+
+
+p.doub1 = data.frame(samps = replicate(10000, double.sample2(1)))
+
+average_sig4 = mean(p.doub1 < 0.05); average_sig4
+
+qplot(x=samps, data = p.doub1, binwidth = 0.01)
+
+p.doub2 = data.frame(samps = replicate(10000, double.sample2(.5)))
+
+average_sig5 = mean(p.doub2 < 0.05); average_sig5
+
+qplot(x=samps, data = p.doub2, binwidth = 0.01)
+
+p.doub3 = data.frame(samps = replicate(10000, double.sample2(.75)))
+
+average_sig6 = mean(p.doub3 < 0.05); average_sig6
+
+qplot(x=samps, data = p.doub3, binwidth = 0.01)
+
+```
+
+What do you conclude on the basis of this simulation? How bad is this kind of data-dependent policy?
+
+This type of data-dependent policy is quite problematic. The false positive rate is increased by more than 50%.
+
+Part 2: The Linear Model
+========================
+
+2A: Basic Linear Modeling
+-------------------------
+
+Let's use the `ToothGrowth` dataset, on guineapig teeth based on orange juice
+and vitamin C. This is super simple. (Try `?ToothGrowth`).
+
+First plot the data, we'll use `qplot` to understand how `len` (tooth length) depends on `dose` (amount of Vitamin C) and `supp` (delivery method).
+
+```{r}
+
+qplot(x=dose, y=len, facets = ~supp, data = ToothGrowth) 
+
+```
+
+So now you see what's going on. 
+
+Next, always make a histogram of the DV before making a linear model! This reveals the distribution and can be helpful in choosing your model type.
+
+```{r}
+
+qplot(x=len, data = ToothGrowth, facets = ~supp, geom = "histogram", binwidth = .5)
+
+```
+
+Now make a linear model of tooth lengths using `lm`. Try making one with main effects and interactions and another with just main  effects. Make sure to assign them to variables so that you can get them later.
+
+```{r}
+
+mod.add = lm(len ~ dose + supp, data = ToothGrowth)
+summary(mod.add)
+
+mod.int = lm(len ~ dose * supp, data = ToothGrowth)
+summary(mod.int)
+
+```
+
+Now try taking out the intercept, using a -1 term in the formula. what does this do?
+
+```{r}
+
+mod.add2 = lm(len ~ -1 + dose + supp, data = ToothGrowth)
+summary(mod.add2)
+
+mod.int2 = lm(len ~ -1 + dose * supp, data = ToothGrowth)
+summary(mod.int2)
+
+```
+
+Using a -1 term in the formula removes the intercept (or baseline comparison where one group is arbitrarily assigned to the intercept). The output including a -1 term now represents each group explicitly, giving the slope of how length increases with dose, as well as the mean length for the OJ group and the VC group. In the interactive model, the coefficient for the dose represents the slope of the line in the OJ group and the coefficient for the interaction term represents the difference in slopes between the OJ and VC terms.
+
+Thought question: Take a moment to interpret the coefficients of the model. 
+Q1 - What are the units?
+
+SB: The units are whatever units were used to measure guinea pig teeth lengths.
+
+Q2 - How does the interaction relate to the plot?
+
+SB: The coefficient for the interaction term represents the difference in slopes (i.e., how tooth length increases with dosage) between the OJ and VC groups.
+
+Q3 - Should there be an interaction in the model? What does it mean? How important is it?
+
+SB: Yes, there should be an interaction in the model because the difference in slopes are significant, meaning that the effect of dose on tooth length is dependent on supplement type (i.e., the rate at which tooth rate increases with dose is different depending on the supplement type). If your goal is to increase tooth length as fast as possible, it would be important to know which supplement type is most efficient in order to save money and time.
+
+Now make predictions from the model you like the best. What should happen with
+doses of 0, 1.5, 2.5, and 10 under both supplements? 
+
+HINT: use the `predict` function ...
+
+HINT 2: you will have to make a dataframe to do the prediction with, so use something like `data.frame(dose=...)`.
+
+```{r}
+
+d <- data.frame(dose = c(0, 1.5, 2.5, 10),
+                supp = c("OJ", "OJ", "OJ", "OJ", "VC", "VC", "VC", "VC"))
+
+d$predict = predict(mod.int, d); d
+
+```
+
+Now plot the residuals from the original model. How do they look?
+HINT: `?resid`
+
+```{r}
+
+qplot(x = len, y = resid(mod.int), data = ToothGrowth)
+
+```
+
+The residuals look like parallel lines with positive slopes (i.e., they seem to increase with tooth length).
+
+BONUS: test them for normality of distribution using a quantile-quantile plot.
+
+HINT: `?qqplot` and `?qqnorm`
+
+```{r}
+
+```
+
+
+2B: Exploratory Linear Modeling
+-------------------------------
+
+What the heck is going on? Load data from Frank, Vul, Saxe (2011, Infancy), a study in which we measured infants' looking to hands in moving scenes. There were infants from 3 months all the way to about two years, and there were two movie conditions (`Faces_Medium`, in which kids played on a white background, and `Faces_Plus`, in which the backgrounds were more complex and the people in the videos were both kids and adults). Forgive our bad naming conventions.
+
+Try to figure out what the most reasonable linear model of the data is.
+
+```{r}
+
+d.hands <- read.csv("../data/FVS2011-hands.csv")
+
+qplot(x=age, y=hand.look, facets = ~condition, data = d.hands) 
+
+qplot(x=hand.look, data = d.hands, facets = ~condition, geom = "histogram", binwidth = .01)
+
+mod.hands = lm(hand.look ~ age * condition, data = d.hands); summary(mod.hands)
+
+```
+
+Plot that model on the same plot as the data.
+
+HINT: you can do this either using `predict` or (if you are feeling confident of your understanding of the models) using the built-in linear models in `ggplot`'s `geom_smooth`. 
+
+```{r}
+
+ggplot(d.hands, aes(x = age, y = hand.look, colour = condition)) +
+  geom_smooth(method = 'lm') +
+  geom_point()
+
+```
+
+What do you conclude from this pattern of data?
+
+As age increases, children pay more attention to hands, but this main effect of age is qualified by the complexity of the scene: attention to hands increases more rapidly with age for the complex scenes than the simple scenes.
